@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root{
@@ -21,8 +22,7 @@
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
   box-sizing:border-box;
 }
-
-:root:not([data-theme="ligth"]){}
+:root:not([data-theme="light"]){}
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#0f1513; --panel:#182420; --ink:#e9efec; --ink-dim:#93a09b; --line:#2a3733;
@@ -75,7 +75,7 @@ main{flex:1;overflow-y:auto;padding:12px 12px 90px}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
 .seg button{flex:1;min-width:80px;padding:11px 8px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
 .seg button.on{background:var(--teal);border-color:var(--teal);color:#fff}
-input[type=text],textarea{width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font-size:15px;font-family:var(--font-b)}
+input[type=text],input[type=password],textarea{width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font-size:15px;font-family:var(--font-b)}
 textarea{min-height:70px;resize:vertical}
 .row2{display:flex;gap:10px}
 .row2>div{flex:1}
@@ -100,6 +100,14 @@ textarea{min-height:70px;resize:vertical}
 .card-check.on{background:var(--teal);border-color:var(--teal)}
 .card.selecting{cursor:pointer}
 .select-bar{position:fixed;left:0;right:0;bottom:0;max-width:640px;margin:0 auto;background:var(--panel);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;z-index:30;box-shadow:0 -4px 16px #0002}
+.select-bar .btn{padding:12px 6px;font-size:13px;white-space:nowrap}
+.select-bar .btn.primary{flex:2}
+.mode-btn{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1.5px solid #ffffff55;background:#ffffff22;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-b);white-space:nowrap}
+#loginOverlay{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px 20px}
+.login-card h2{font-family:var(--font-h);font-size:22px;margin:0 0 4px}
+.login-sub{font-size:12.5px;color:var(--ink-dim);margin:0 0 18px;font-family:var(--font-m);line-height:1.5}
+.login-msg{min-height:18px;font-size:12.5px;color:#b8432e;margin:-6px 0 10px;line-height:1.4}
 .card-actions{margin-top:8px;text-align:right}
 .pdf-mini{background:transparent;border:none;color:var(--teal);font-size:11.5px;font-weight:700;cursor:pointer;padding:4px 0;font-family:var(--font-m)}
 .chartbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
@@ -116,8 +124,13 @@ canvas{display:block}
 <body>
 <div id="app">
   <header>
-    <h1>Bombas Depresoras</h1>
-    <p id="subtitle">cargando…</p>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div>
+        <h1>Bombas Depresoras</h1>
+        <p id="subtitle">cargando…</p>
+      </div>
+      <button class="mode-btn" id="logoutBtn" style="display:none">Salir</button>
+    </div>
     <div class="tabs">
       <button class="tab active" data-tab="lista">Lista</button>
       <button class="tab" data-tab="resumen">Resumen</button>
@@ -128,6 +141,20 @@ canvas{display:block}
 </div>
 <div class="sheet-bg" id="sheetBg"></div>
 <div class="sheet" id="sheet"></div>
+
+<div id="loginOverlay">
+  <div class="login-card">
+    <h2>Bombas Depresoras</h2>
+    <p class="login-sub">Relevamiento · acceso con usuario y contraseña</p>
+    <div id="loginLoading" class="login-sub">Verificando sesión…</div>
+    <form id="loginForm" style="display:none" autocomplete="on">
+      <div class="field"><label for="loginUser">Usuario</label><input type="text" id="loginUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+      <div class="field"><label for="loginPass">Contraseña</label><input type="password" id="loginPass" autocomplete="current-password"></div>
+      <div id="loginMsg" class="login-msg"></div>
+      <button type="submit" class="btn primary" id="loginBtn" style="width:100%">Ingresar</button>
+    </form>
+  </div>
+</div>
 
 <script>
 const TRI=[['si','Sí'],['no','No'],['nspc','No se pudo constatar']];
@@ -140,32 +167,6 @@ const FIELDS=[
   {k:'clandestina',label:'Conexión clandestina',opts:BI},
   {k:'tableroCorriente',label:'Tablero tiene corriente',opts:BI},
 ];
-const SEED=[
-{numero:'427',esta:'si',funciona:'si',medidor:'si',corriente:'si',clandestina:'',tableroCorriente:'si',lectura:'1.09',obs:''},
-{numero:'426',esta:'si',funciona:'si',medidor:'si',corriente:'si',clandestina:'',tableroCorriente:'si',lectura:'-0.17',obs:'Aparenta falla de tensión; funciona pero la tensión es irregular y corta sola.'},
-{numero:'428',esta:'nspc',funciona:'no',medidor:'si',corriente:'no',clandestina:'',tableroCorriente:'no',lectura:'',obs:'No se encontró tapa de inspección; del tablero no bajan cables ni sensores. Todo indica que no está. (Tablero completo)'},
-{numero:'429',esta:'nspc',funciona:'',medidor:'si',corriente:'no',clandestina:'',tableroCorriente:'',lectura:'',obs:'Tapa soldada. Medidor sin instalación. No hay tablero.'},
-{numero:'431',esta:'si',funciona:'si',medidor:'si',corriente:'si',clandestina:'',tableroCorriente:'si',lectura:'',obs:'Térmica baja, se reactivó y quedó funcionando.'},
-{numero:'432',esta:'si',funciona:'nspc',medidor:'si',corriente:'no',clandestina:'',tableroCorriente:'no',lectura:'',obs:'Sin corriente por parte de la empresa. Instalación completa, aparentemente correcta. (Tablero completo)'},
-{numero:'433',esta:'nspc',funciona:'nspc',medidor:'si',corriente:'no',clandestina:'',tableroCorriente:'no',lectura:'',obs:'Tapa tapada de tierra, no se pudo observar la instalación. (Completo sin corriente)'},
-{numero:'434',esta:'nspc',funciona:'',medidor:'',corriente:'',clandestina:'',tableroCorriente:'',lectura:'',obs:'No hay ninguna instalación visible en el punto geolocalizado.'},
-{numero:'435',esta:'si',funciona:'si',medidor:'si',corriente:'si',clandestina:'',tableroCorriente:'no',lectura:'',obs:'Sin tablero. Caja con pulsador de arranque que funciona.'},
-{numero:'436',esta:'nspc',funciona:'nspc',medidor:'si',corriente:'si',clandestina:'',tableroCorriente:'si',lectura:'',obs:'Tablero de accionamiento en cortocircuito. No se pudo observar cámara de inspección.'},
-{numero:'(revisar N°, ilegible)',esta:'nspc',funciona:'no',medidor:'no',corriente:'',clandestina:'si',tableroCorriente:'si',lectura:'',obs:'REVISAR NÚMERO al editar. Tablero en corto. Vecino indica que la bomba está pero los caños están tapados.'},
-{numero:'575',esta:'si',funciona:'si',medidor:'si',corriente:'si',clandestina:'',tableroCorriente:'si',lectura:'1.30',obs:''},
-{numero:'572',esta:'si',funciona:'si',medidor:'si',corriente:'si',clandestina:'',tableroCorriente:'si',lectura:'',obs:'No presenta nivel suficiente para activar sola.'},
-{numero:'571',esta:'no',funciona:'',medidor:'si',corriente:'no',clandestina:'',tableroCorriente:'no',lectura:'',obs:'Cámara de inspección vacía. Tablero incompleto.'},
-{numero:'568',esta:'no',funciona:'',medidor:'si',corriente:'no',clandestina:'',tableroCorriente:'no',lectura:'',obs:'Tablero completo, cámara de inspección vacía.'},
-{numero:'569',esta:'no',funciona:'',medidor:'',corriente:'',clandestina:'',tableroCorriente:'',lectura:'',obs:'No hay instalación en el punto.'},
-{numero:'570',esta:'no',funciona:'',medidor:'no',corriente:'',clandestina:'',tableroCorriente:'no',lectura:'',obs:'Cámara de inspección con caños desconectados. Conexión cortada.'},
-{numero:'567',esta:'no',funciona:'',medidor:'no',corriente:'no',clandestina:'',tableroCorriente:'no',lectura:'',obs:'Cámara llena de basura, sin tablero.'},
-{numero:'565',esta:'si',funciona:'si',medidor:'no',corriente:'',clandestina:'si',tableroCorriente:'',lectura:'1.32',obs:'Llave de paso cerrada. Problema de tensión pero funciona (sin protección).'},
-{numero:'564',esta:'si',funciona:'no',medidor:'si',corriente:'si',clandestina:'',tableroCorriente:'si',lectura:'',obs:'Posible falta de tensión. Vecino indica que hace 3 años no funciona y nadie vino a revisar.'},
-{numero:'542',esta:'no',funciona:'',medidor:'',corriente:'',clandestina:'',tableroCorriente:'',lectura:'',obs:'No se encontró instalación en el punto.'},
-{numero:'561',esta:'no',funciona:'',medidor:'',corriente:'',clandestina:'',tableroCorriente:'',lectura:'',obs:'No se encontró instalación en el punto.'},
-{numero:'566',esta:'no',funciona:'',medidor:'no',corriente:'si',clandestina:'si',tableroCorriente:'si',lectura:'',obs:'No hay ninguna instalación en la cámara.'},
-{numero:'563',esta:'no',funciona:'',medidor:'',corriente:'',clandestina:'',tableroCorriente:'',lectura:'',obs:'No hay instalación en el punto. REVISAR N° (letra poco clara).'}
-];
 
 const firebaseConfig = {
   apiKey: "AIzaSyAXkrpVaqzXCVwkuD4G6rPDlBTc9iNFDOk",
@@ -176,7 +177,14 @@ const firebaseConfig = {
   appId: "1:808522451621:web:724e965fedb8be9f9a9b4c"
 };
 
-let items=[]; let usingDb=false; let dbCol=null;
+// Los usuarios escriben solo su nombre (ej: "flor"); la app le agrega este dominio interno.
+const USER_DOMAIN = '@bombas.app';
+// Usuarios con permiso de EDICIÓN. El resto entra en modo solo lectura (visualizar).
+// ⚠️ Esta lista tiene que coincidir con la de las Reglas de Firestore.
+const EDITORES = ['flor@bombas.app', 'fran@bombas.app'];
+
+let appMode='view'; let currentUser=null; let unsubscribeData=null; let dataError='';
+let items=[]; let dbCol=null;
 let filters={esta:'todas',funciona:'todas'};
 let tab='lista'; let editingId=null;
 let selectMode=false; let selected=new Set();
@@ -186,44 +194,87 @@ const COLORS=['#0e6e63','#b8432e','#c1811f'];
 
 function label(k,v){ if(!v) return '—'; const f=FIELDS.find(f=>f.k===k); const o=f.opts.find(o=>o[0]===v); return o?o[1]:v; }
 
-async function initStore(){
-  try{
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-    dbCol = db.collection('bombas');
-    usingDb=true;
-    const snap = await dbCol.get();
-    if(snap.docs.length===0){ for(const s of SEED){ await dbCol.add(s); } }
-    dbCol.onSnapshot(snap=>{
-      items = snap.docs.map(d=>({id:d.id,...d.data()}));
-      render();
-    }, ()=>{ localFallback(); });
-  } catch(e){
-    console.error('No se pudo conectar a Firebase, usando respaldo local:', e);
-    localFallback();
+function startData(){
+  stopData();
+  dbCol = firebase.firestore().collection('bombas');
+  unsubscribeData = dbCol.onSnapshot(snap=>{
+    items = snap.docs.map(d=>({id:d.id,...d.data()}));
+    dataError='';
+    render();
+  }, err=>{
+    console.error(err);
+    dataError = (err && err.code==='permission-denied')
+      ? 'Tu usuario no tiene permiso para ver los datos. Consultá con quien administra la app.'
+      : 'No se pudo leer la base de datos. Revisá tu conexión a internet y recargá la página.';
+    render();
+  });
+}
+function stopData(){
+  if(unsubscribeData){ unsubscribeData(); unsubscribeData=null; }
+  items=[]; dbCol=null;
+}
+async function writeOp(fn){
+  try{ await fn(); return true; }
+  catch(e){
+    console.error(e);
+    alert(e && e.code==='permission-denied'
+      ? 'Tu usuario no tiene permiso para modificar datos.'
+      : 'No se pudo guardar. Revisá tu conexión e intentá de nuevo.');
+    return false;
   }
 }
-function localFallback(){
-  usingDb=false;
-  let raw;
-  try{ raw = JSON.parse(localStorage.getItem('bombas_data')||'null'); }catch(e){ raw=null; }
-  if(!raw){ raw = SEED.map((s,i)=>({id:'s'+i,...s})); saveLocal(raw); }
-  items = raw; render();
-}
-function saveLocal(arr){ try{ localStorage.setItem('bombas_data', JSON.stringify(arr)); }catch(e){} }
+async function addItem(obj){ if(!obj.uid) obj.uid=genUid(); return writeOp(()=>dbCol.add(obj)); }
+async function updateItem(id,obj){ return writeOp(()=>dbCol.doc(id).update(obj)); }
+async function removeItem(id){ return writeOp(()=>dbCol.doc(id).delete()); }
 
-async function addItem(obj){
-  if(!obj.uid) obj.uid = genUid();
-  if(usingDb){ await dbCol.add(obj); }
-  else{ items.push({id:'l'+Date.now()+Math.random().toString(36).slice(2,6), ...obj}); saveLocal(items); render(); }
+function userName(){ return currentUser && currentUser.email ? currentUser.email.split('@')[0] : ''; }
+function userLabel(){ return userName()+' ('+(appMode==='edit'?'editor':'solo lectura')+')'; }
+function updateModeUI(){
+  document.getElementById('fab').style.display = (currentUser && appMode==='edit') ? 'flex' : 'none';
+  document.getElementById('logoutBtn').style.display = currentUser ? 'inline-block' : 'none';
 }
-async function updateItem(id,obj){
-  if(usingDb){ await dbCol.doc(id).update(obj); }
-  else{ const i=items.findIndex(x=>x.id===id); if(i>-1){ items[i]={...items[i],...obj}; saveLocal(items); render(); } }
+function initAuth(){
+  firebase.initializeApp(firebaseConfig);
+  firebase.auth().onAuthStateChanged(user=>{
+    document.getElementById('loginLoading').style.display='none';
+    selectMode=false; selected.clear();
+    if(user){
+      currentUser=user;
+      appMode = EDITORES.includes((user.email||'').toLowerCase()) ? 'edit' : 'view';
+      document.getElementById('loginOverlay').style.display='none';
+      updateModeUI();
+      startData();
+    } else {
+      currentUser=null; appMode='view'; dataError='';
+      stopData(); updateModeUI();
+      document.getElementById('main').innerHTML='';
+      document.getElementById('loginOverlay').style.display='flex';
+      document.getElementById('loginForm').style.display='block';
+    }
+  });
 }
-async function removeItem(id){
-  if(usingDb){ await dbCol.doc(id).delete(); }
-  else{ items=items.filter(x=>x.id!==id); saveLocal(items); render(); }
+async function doLogin(e){
+  e.preventDefault();
+  const u=document.getElementById('loginUser').value.trim();
+  const p=document.getElementById('loginPass').value;
+  const msg=document.getElementById('loginMsg');
+  const btn=document.getElementById('loginBtn');
+  msg.textContent='';
+  if(!u || !p){ msg.textContent='Completá usuario y contraseña.'; return; }
+  const email = u.includes('@') ? u.toLowerCase() : u.toLowerCase()+USER_DOMAIN;
+  btn.disabled=true; btn.textContent='Ingresando…';
+  try{
+    await firebase.auth().signInWithEmailAndPassword(email,p);
+    document.getElementById('loginPass').value='';
+  } catch(err){
+    const c=(err && err.code)||'';
+    if(['auth/invalid-credential','auth/invalid-login-credentials','auth/wrong-password','auth/user-not-found','auth/invalid-email'].includes(c)) msg.textContent='Usuario o contraseña incorrectos.';
+    else if(c==='auth/too-many-requests') msg.textContent='Demasiados intentos. Esperá unos minutos e intentá de nuevo.';
+    else if(c==='auth/network-request-failed') msg.textContent='Sin conexión. Revisá tu internet.';
+    else if(c==='auth/operation-not-allowed') msg.textContent='El acceso con usuario y contraseña todavía no está activado en Firebase.';
+    else msg.textContent='No se pudo ingresar ('+c+').';
+  }
+  btn.disabled=false; btn.textContent='Ingresar';
 }
 
 function filtered(){
@@ -231,11 +282,18 @@ function filtered(){
     if(filters.esta!=='todas' && it.esta!==filters.esta) return false;
     if(filters.funciona!=='todas' && it.funciona!==filters.funciona) return false;
     return true;
-  }).sort((a,b)=> (a.numero||'').localeCompare(b.numero||'', undefined, {numeric:true}));
+  }).sort(byNumero);
 }
+function byNumero(a,b){ return (a.numero||'').localeCompare(b.numero||'', undefined, {numeric:true}); }
 
 function render(){
-  document.getElementById('subtitle').textContent = items.length+' bombas relevadas'+(usingDb?'':' · guardado en este dispositivo');
+  const sub=document.getElementById('subtitle');
+  if(dataError){
+    sub.textContent='sin conexión con la base de datos';
+    document.getElementById('main').innerHTML='<div class="banner">'+dataError+'</div>';
+    return;
+  }
+  sub.textContent = items.length+' bombas · '+userLabel();
   if(tab==='lista') renderLista(); else renderResumen();
 }
 
@@ -259,6 +317,7 @@ function pctBlockHtml(list){
 }
 function renderLista(){
   const list=filtered();
+  const hasFilter = filters.esta!=='todas' || filters.funciona!=='todas';
   const main=document.getElementById('main');
   main.innerHTML = `
     <div class="filters" id="fEsta"></div>
@@ -267,13 +326,14 @@ function renderLista(){
     <div class="list-tools">
       <div class="count">${list.length} de ${items.length} bombas</div>
       <button class="sel-toggle ${selectMode?'on':''}" id="btnSelToggle">${selectMode?'✕ Cancelar selección':'☑ Seleccionar'}</button>
-      <button class="pdf-all" id="btnPdfAll">⬇ PDF (${list.length})</button>
+      ${selectMode?'':`<button class="pdf-all" id="btnPdfAll">⬇ PDF ${hasFilter?'filtradas':'todas'} (${list.length})</button>`}
     </div>
     <div id="cards"></div>
   `;
   chipsRow('fEsta','esta',[['todas','Todas'],['si','Está'],['no','No está'],['nspc','No constatado']]);
   chipsRow('fFunciona','funciona',[['todas','Todas'],['si','Funciona'],['no','No funciona'],['nspc','No constatado']]);
-  document.getElementById('btnPdfAll').addEventListener('click', ()=>downloadPdfList(list));
+  const btnPdfAll=document.getElementById('btnPdfAll');
+  if(btnPdfAll) btnPdfAll.addEventListener('click', ()=>downloadPdfList(list));
   document.getElementById('btnSelToggle').addEventListener('click', ()=>{ selectMode=!selectMode; selected.clear(); renderLista(); });
   const cards=document.getElementById('cards');
   if(list.length===0){ cards.innerHTML='<div class="empty">No hay bombas con estos filtros.</div>'; renderSelectBar(); return; }
@@ -289,8 +349,16 @@ function renderLista(){
       ${selectMode?'':`<div class="card-actions"><button class="pdf-mini" data-pdf="${it.id}">⬇ Descargar planilla PDF</button></div>`}
     </div>`).join('');
   cards.querySelectorAll('.card').forEach(c=>c.addEventListener('click',(e)=>{
-    if(selectMode){ const id=c.dataset.id; selected.has(id)?selected.delete(id):selected.add(id); renderLista(); return; }
     if(e.target.closest('.pdf-mini')) return;
+    if(selectMode){
+      const id=c.dataset.id;
+      if(selected.has(id)) selected.delete(id); else selected.add(id);
+      const chk=c.querySelector('.card-check'); const on=selected.has(id);
+      if(chk){ chk.classList.toggle('on',on); chk.textContent=on?'✓':''; }
+      renderSelectBar();
+      return;
+    }
+    if(appMode!=='edit') return;
     openSheet(c.dataset.id);
   }));
   cards.querySelectorAll('.pdf-mini').forEach(b=>b.addEventListener('click',(e)=>{ e.stopPropagation(); const it=items.find(x=>x.id===b.dataset.pdf); downloadPdfSingle(it); }));
@@ -302,14 +370,29 @@ function renderSelectBar(){
   const bar=document.createElement('div');
   bar.className='select-bar'; bar.id='selBar';
   bar.innerHTML = `
-    <button class="btn ghost" id="btnSelCancel">Cancelar</button>
-    <button class="btn primary" id="btnSelExport">⬇ Exportar selección (${selected.size})</button>`;
+    <button class="btn ghost" id="btnSelCancel">✕</button>
+    <button class="btn ghost" id="btnSelAll">Todas</button>
+    <button class="btn primary" id="btnSelPdf">⬇ PDF (${selected.size})</button>
+    ${appMode==='edit'?'<button class="btn ghost" id="btnSelJson">⬇ Datos</button>':''}`;
   document.body.appendChild(bar);
+  const getSel=()=>items.filter(it=>selected.has(it.id)).sort(byNumero);
   document.getElementById('btnSelCancel').addEventListener('click', ()=>{ selectMode=false; selected.clear(); renderLista(); });
-  document.getElementById('btnSelExport').addEventListener('click', async ()=>{
-    if(selected.size===0){ alert('Elegí al menos una bomba tocándola.'); return; }
-    await exportItems(items.filter(it=>selected.has(it.id)), `bombas_seleccion_${new Date().toISOString().slice(0,10)}.json`);
-    selectMode=false; selected.clear(); renderLista();
+  document.getElementById('btnSelAll').addEventListener('click', ()=>{
+    const ids=filtered().map(x=>x.id);
+    const all=ids.length>0 && ids.every(id=>selected.has(id));
+    ids.forEach(id=> all ? selected.delete(id) : selected.add(id));
+    renderLista();
+  });
+  document.getElementById('btnSelPdf').addEventListener('click', async ()=>{
+    const sel=getSel();
+    if(sel.length===0){ alert('Elegí al menos una bomba tocándola.'); return; }
+    await downloadPdfList(sel, `planillas_seleccion_${new Date().toISOString().slice(0,10)}.pdf`);
+  });
+  const bj=document.getElementById('btnSelJson');
+  if(bj) bj.addEventListener('click', async ()=>{
+    const sel=getSel();
+    if(sel.length===0){ alert('Elegí al menos una bomba tocándola.'); return; }
+    await exportItems(sel, `bombas_seleccion_${new Date().toISOString().slice(0,10)}.json`);
   });
 }
 function chipsRow(elId,key,opts){
@@ -323,28 +406,30 @@ function renderResumen(){
   const main=document.getElementById('main');
   const n=items.length;
   const funciona=items.filter(i=>i.funciona==='si').length;
-  const clandestina=items.filter(i=>i.clandestina==='si').length;
+  const noFunciona=items.filter(i=>i.funciona==='no').length;
   main.innerHTML = `
     <div class="stat-row">
       <div class="stat"><b>${n}</b><span>Total</span></div>
       <div class="stat"><b>${funciona}</b><span>Funcionan</span></div>
-      <div class="stat"><b>${clandestina}</b><span>Clandestinas</span></div>
+      <div class="stat"><b>${noFunciona}</b><span>No funcionan</span></div>
     </div>
     <div class="summary-grid" id="chartsArea">
       <div class="chartbox"><h3>¿La bomba está?</h3><div class="chart-wrap"><canvas id="chEsta"></canvas></div></div>
       <div class="chartbox"><h3>¿Funciona?</h3><div class="chart-wrap"><canvas id="chFunciona"></canvas></div></div>
     </div>
-    <div class="chartbox" style="margin-top:14px" id="shareBox">
-      <h3>Compartir datos con un compañero</h3>
-      <p style="font-size:12px;color:var(--ink-dim);margin:0 0 12px;line-height:1.5">Si tu compañero usa el plan gratis, lo que carga queda solo en su teléfono. Que toque "Exportar mis datos" y te mande el archivo por WhatsApp; vos lo abrís acá con "Importar recibidos" y se suma a esta lista.</p>
+    ${appMode==='edit'?`<div class="chartbox" style="margin-top:14px" id="shareBox">
+      <h3>Respaldo de datos</h3>
+      <p style="font-size:12px;color:var(--ink-dim);margin:0 0 12px;line-height:1.5">"Exportar" descarga una copia de todas las bombas en un archivo (útil como respaldo). "Importar" suma bombas desde un archivo exportado antes; las que ya existen se omiten.</p>
       <div class="sheet-actions">
-        <button class="btn ghost" id="btnExport">⬇ Exportar mis datos</button>
-        <label class="btn primary" for="fileImport" style="display:flex;align-items:center;justify-content:center;margin:0">⬆ Importar recibidos</label>
+        <button class="btn ghost" id="btnExport">⬇ Exportar todo</button>
+        <label class="btn primary" for="fileImport" style="display:flex;align-items:center;justify-content:center;margin:0">⬆ Importar</label>
         <input type="file" id="fileImport" accept="application/json" style="display:none">
       </div>
-    </div>`;
-  document.getElementById('btnExport').addEventListener('click', exportData);
-  document.getElementById('fileImport').addEventListener('change', (e)=>importData(e.target.files));
+    </div>`:''}`;
+  if(appMode==='edit'){
+    document.getElementById('btnExport').addEventListener('click', exportData);
+    document.getElementById('fileImport').addEventListener('change', (e)=>importData(e.target.files));
+  }
   renderResumenCharts(0);
 }
 function renderResumenCharts(attempt){
@@ -381,7 +466,8 @@ async function importData(fileList){
     const numero=(raw.numero||'').trim();
     const yaExiste = (raw.uid && items.some(it=>it.uid===raw.uid)) || (numero && items.some(it=>(it.numero||'').trim()===numero));
     if(yaExiste){ skipped++; continue; }
-    await addItem({uid:raw.uid||genUid(),numero:raw.numero||'',esta:raw.esta||'',funciona:raw.funciona||'',medidor:raw.medidor||'',corriente:raw.corriente||'',clandestina:raw.clandestina||'',tableroCorriente:raw.tableroCorriente||'',lectura:raw.lectura||'',obs:raw.obs||''});
+    const ok = await addItem({uid:raw.uid||genUid(),numero:raw.numero||'',esta:raw.esta||'',funciona:raw.funciona||'',medidor:raw.medidor||'',corriente:raw.corriente||'',clandestina:raw.clandestina||'',tableroCorriente:raw.tableroCorriente||'',lectura:raw.lectura||'',obs:raw.obs||''});
+    if(!ok){ alert('Se detuvo la importación por un error. Se importaron '+added+' bombas antes del error.'); return; }
     added++;
   }
   alert(`Se importaron ${added} bombas nuevas. ${skipped} ya existían (mismo número o mismo registro) y se omitieron.`);
@@ -499,12 +585,12 @@ async function downloadPdfSingle(it){
   drawBombaPage(doc, it);
   await saveFile(`bomba_${(it.numero||'sn').replace(/[^\w-]/g,'_')}.pdf`, doc.output('blob'));
 }
-async function downloadPdfList(list){
+async function downloadPdfList(list, filename){
   if(!list.length){ alert('No hay bombas para exportar con estos filtros.'); return; }
   if(!window.jspdf){ alert('La librería para generar PDF todavía está cargando, esperá unos segundos y probá de nuevo.'); return; }
   const {jsPDF}=window.jspdf; const doc=new jsPDF();
   list.forEach((it,i)=>{ if(i>0) doc.addPage(); drawBombaPage(doc, it); });
-  await saveFile(`planillas_bombas_${new Date().toISOString().slice(0,10)}.pdf`, doc.output('blob'));
+  await saveFile(filename || `planillas_bombas_${new Date().toISOString().slice(0,10)}.pdf`, doc.output('blob'));
 }
 
 function fieldSeg(f, current){
@@ -514,6 +600,7 @@ function fieldSeg(f, current){
 }
 
 function openSheet(id){
+  if(appMode!=='edit') return;
   editingId=id;
   const it = id ? items.find(x=>x.id===id) : {numero:'',esta:'',funciona:'',medidor:'',corriente:'',clandestina:'',tableroCorriente:'',lectura:'',obs:''};
   const sheet=document.getElementById('sheet');
@@ -541,7 +628,7 @@ function openSheet(id){
   });
   document.getElementById('btnCancel').addEventListener('click',closeSheet);
   document.getElementById('btnSave').addEventListener('click',saveSheet);
-  if(id) document.getElementById('btnDel').addEventListener('click', async ()=>{ await removeItem(id); closeSheet(); });
+  if(id) document.getElementById('btnDel').addEventListener('click', async ()=>{ if(!confirm('¿Eliminar esta bomba? No se puede deshacer.')) return; if(await removeItem(id)) closeSheet(); });
   document.getElementById('sheetBg').classList.add('show');
   sheet.classList.add('show');
 }
@@ -554,8 +641,8 @@ async function saveSheet(){
     const on=seg.querySelector('button.on');
     obj[f.k]= on? on.dataset.v : '';
   });
-  if(editingId) await updateItem(editingId, obj); else await addItem(obj);
-  closeSheet();
+  const ok = editingId ? await updateItem(editingId, obj) : await addItem(obj);
+  if(ok) closeSheet();
 }
 
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
@@ -564,8 +651,14 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
 }));
 document.getElementById('fab').addEventListener('click',()=>openSheet(null));
 document.getElementById('sheetBg').addEventListener('click',closeSheet);
-
-initStore();
+document.getElementById('loginForm').addEventListener('submit',doLogin);
+document.getElementById('logoutBtn').addEventListener('click',()=>{ if(confirm('¿Cerrar sesión?')) firebase.auth().signOut(); });
+updateModeUI();
+try{ initAuth(); }
+catch(e){
+  console.error(e);
+  document.getElementById('loginLoading').textContent='No se pudo cargar el servicio de acceso. Revisá tu conexión y recargá la página.';
+}
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(e=>console.log('SW no registrado:', e)); });
 }
